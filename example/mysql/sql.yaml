@@ -1,0 +1,5 @@
+getAllUsers: "select id:int, name:string from users"
+findUsersWith: "select id:int, name:string from users where id=$userId:int"
+getUserByName: "select name:string, id:int from users where name like $name:string or name like $altername:string"
+updateUserName: "update users set name=?string:name where id=$userId:int"
+addUser: "insert into users set name=?string:name"
