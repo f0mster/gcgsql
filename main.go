@@ -217,7 +217,7 @@ func findArgs(query string, outType rune, supportReturning bool) (res *data, err
 		if queryType == "select" && len(brackets) == 0 && last6tokens[0].lowerText == "from" {
 			selectsParams = false
 		}
-		// parse params
+		// parse arguments
 		if state >= 0 && last6tokens[0].startPos == last6tokens[1].endPos && (tok == '$') {
 			return nil, fmt.Errorf("syntax error near: %s", query[0:last6tokens[0].endPos])
 		}
