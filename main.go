@@ -123,11 +123,12 @@ func main() {
 }
 
 type arg struct {
-	argType  string
-	argName  string
-	posStart int
-	posEnd   int
-	isParam  bool
+	argType     string
+	argName     string
+	posStart    int
+	posEnd      int
+	isParam     bool
+	notFinished bool
 }
 
 type parsedArg struct {
@@ -160,7 +161,6 @@ func findArgs(query string, outType rune, supportReturning bool) (res *data, err
 	s.Init(strings.NewReader(query))
 	args := make([]*arg, 0)
 	i := -1
-	lastTokenPos := -1
 	state := -1
 	argTypeByName := map[string]*nameAndNumber{}
 	last6tokens := [6]token{}
@@ -173,6 +173,7 @@ func findArgs(query string, outType rune, supportReturning bool) (res *data, err
 	if queryType == "select" {
 		selectsParams = true
 	}
+	argTypeJustSet := false
 	for tok = s.Scan(); last6tokens[0].token != scanner.EOF; tok = s.Scan() {
 		// parse return values
 		last6tokens[5], last6tokens[4], last6tokens[3], last6tokens[2], last6tokens[1] = last6tokens[4], last6tokens[3], last6tokens[2], last6tokens[1], last6tokens[0]
@@ -189,7 +190,7 @@ func findArgs(query string, outType rune, supportReturning bool) (res *data, err
 		if bracketPairs[tok] != 0 {
 			brackets, pair = brackets.Pop()
 			if pair != bracketPairs[tok] {
-				return nil, fmt.Errorf("parse error! wrong bracket! excpected %c but found %c at right of %s", bracketPairs[tok], pair, query[0:s.Offset])
+				return nil, fmt.Errorf("wrong bracket! excpected %c but found %c at right of %s", bracketPairs[tok], pair, query[0:s.Offset])
 			}
 		}
 		if len(brackets) == 0 && supportReturning &&
@@ -210,31 +211,39 @@ func findArgs(query string, outType rune, supportReturning bool) (res *data, err
 				args = append(args, &arg{argName: last6tokens[5].text, argType: last6tokens[3].text + "." + last6tokens[1].text, posStart: last6tokens[5].startPos, posEnd: last6tokens[1].endPos, isParam: true})
 				i++
 			} else {
-				return nil, fmt.Errorf("parse error! use should use proper columnName:type pair for column! only alpha numerics are allowed! near: %s", query[0:s.Offset])
+				return nil, fmt.Errorf("use should use proper columnName:type pair for column! only alpha numerics are allowed! near: %s", query[0:s.Offset])
 			}
 		}
 		if queryType == "select" && len(brackets) == 0 && last6tokens[0].lowerText == "from" {
 			selectsParams = false
 		}
 		// parse params
+		if state >= 0 && last6tokens[0].startPos == last6tokens[1].endPos && (tok == '$') {
+			return nil, fmt.Errorf("syntax error near: %s", query[0:last6tokens[0].endPos])
+		}
 		if tok == '$' {
-			lastTokenPos = s.Offset
 			state = 0
 			args = append(args, &arg{posStart: s.Offset, posEnd: s.Offset + 1})
 			i++
-		} else if state < 0 {
 			continue
-		} else if s.Offset-1 != lastTokenPos {
+		}
+
+		if state < 0 {
+			continue
+		}
+
+		if last6tokens[0].startPos != last6tokens[1].endPos || tok == scanner.EOF {
 			state = -1
-			args[i].posEnd = s.Offset - 1
-		} else if state == 0 {
+			args[i].posEnd = last6tokens[1].endPos
+			continue
+		}
+
+		if state == 0 {
 			if tok != scanner.Ident {
-				return nil, fmt.Errorf("parse error! bad token %c after $ at right of %s", tok, query[0:s.Offset])
+				return nil, fmt.Errorf("bad token %c after $ at right of %s", tok, query[0:s.Offset])
 			}
 			args[i].argName = s.TokenText()
-			lastTokenPos = s.Offset - 1 + len(s.TokenText())
 			state = 1
-			args[i].posEnd = s.Offset + len(s.TokenText())
 			if _, ok := argTypeByName[args[i].argName]; !ok {
 				argTypeByName[args[i].argName] = &nameAndNumber{argType: "", link: i}
 				if outType == '$' {
@@ -243,13 +252,23 @@ func findArgs(query string, outType rune, supportReturning bool) (res *data, err
 			}
 		} else if state == 1 && tok == ':' {
 			state = 2
-			lastTokenPos = s.Offset
 		} else if state == 2 && tok == scanner.Ident {
 			args[i].argType = s.TokenText()
-			lastTokenPos = s.Offset + len(s.TokenText())
-			state = -1
-			args[i].posEnd = s.Offset + len(s.TokenText())
+			state = 3
 			if argTypeByName[args[i].argName].argType == "" {
+				argTypeByName[args[i].argName].argType = args[i].argType
+				argTypeJustSet = true
+			} else {
+
+			}
+		} else if state == 3 && tok == '.' {
+			state = 4
+			args[i].notFinished = true
+		} else if state == 4 && tok == scanner.Ident {
+			args[i].argType += "." + s.TokenText()
+			args[i].notFinished = false
+			state = 5
+			if argTypeJustSet {
 				argTypeByName[args[i].argName].argType = args[i].argType
 			} else {
 
@@ -261,22 +280,25 @@ func findArgs(query string, outType rune, supportReturning bool) (res *data, err
 	}
 	if len(brackets) > 0 {
 		_, bracket := brackets.Pop()
-		return nil, fmt.Errorf("parse error! found unpaired bracket %c", bracket)
+		return nil, fmt.Errorf("found unpaired bracket %c", bracket)
 	}
 	offset := 0
 	res = &data{Arguments: make([]*parsedArg, 0), ReturnParams: make([]*parsedArg, 0)}
 	for i := range args {
+		if args[i].notFinished {
+			return nil, fmt.Errorf("not finished type near %s", query[0:args[i].posEnd])
+		}
 		if args[i].argName == "" {
-			return nil, fmt.Errorf("parse error! no argument name right from %s", query[0:args[i].posEnd])
+			return nil, fmt.Errorf("no argument name right from %s", query[0:args[i].posEnd])
 		}
 		if args[i].argType == "" && !args[i].isParam {
 			args[i].argType = argTypeByName[args[i].argName].argType
 		}
 		if args[i].argType == "" {
-			return nil, fmt.Errorf("parse error! no argument type right from %s", query[0:args[i].posEnd])
+			return nil, fmt.Errorf("no argument type right from %s", query[0:args[i].posEnd])
 		}
 		if !args[i].isParam && argTypeByName[args[i].argName].argType != args[i].argType {
-			return nil, fmt.Errorf("parse error! argument with name %s have different types! %s and %s", args[i].argName, argTypeByName[args[i].argName].argType, args[i].argType)
+			return nil, fmt.Errorf("argument with name %s have different types! %s and %s", args[i].argName, argTypeByName[args[i].argName].argType, args[i].argType)
 		}
 		if args[i].isParam {
 			res.Query += query[offset:args[i].posStart] + args[i].argName

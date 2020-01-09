@@ -23,20 +23,20 @@ func Test_findArgs(t *testing.T) {
 			name:    "negative. missing brackets",
 			query:   "select if(a>b, a, b from users",
 			outType: '?',
-			wantErr: fmt.Errorf("parse error! found unpaired bracket ("),
+			wantErr: fmt.Errorf("found unpaired bracket ("),
 		},
 		{
 			name:    "negative. wrong closing bracket",
 			query:   "select if(a>b, a], b from users",
 			outType: '?',
-			wantErr: fmt.Errorf("parse error! wrong bracket! excpected [ but found ( at right of select if(a>b, a"),
+			wantErr: fmt.Errorf("wrong bracket! excpected [ but found ( at right of select if(a>b, a"),
 		},
 
 		{
 			name:    "negative. senseless query inside brackets",
 			query:   "select if(a>b, a, a:b) a from users",
 			outType: '?',
-			wantErr: fmt.Errorf("parse error! use should use proper columnName:type pair for column! only alpha numerics are allowed! near: select if(a>b, a, a:b) a "),
+			wantErr: fmt.Errorf("use should use proper columnName:type pair for column! only alpha numerics are allowed! near: select if(a>b, a, a:b) a "),
 		},
 
 		{
@@ -52,31 +52,31 @@ func Test_findArgs(t *testing.T) {
 			name:    "$ token without name",
 			query:   "wdqwq $ $aaas",
 			outType: '?',
-			wantErr: fmt.Errorf("parse error! no argument name right from wdqwq $"),
+			wantErr: fmt.Errorf("no argument name right from wdqwq $"),
 		},
 		{
 			name:    "bad symbol afrer $",
 			query:   "wdqwq $( $aaas",
 			outType: '?',
-			wantErr: fmt.Errorf("parse error! bad token ( after $ at right of wdqwq $"),
+			wantErr: fmt.Errorf("bad token ( after $ at right of wdqwq $"),
 		},
 		{
 			name:    "string after $",
 			query:   "wdqwq $aaas wefweffe wef wef",
 			outType: '?',
-			wantErr: fmt.Errorf("parse error! no argument type right from wdqwq $aaas"),
+			wantErr: fmt.Errorf("no argument type right from wdqwq $aaas"),
 		},
 		{
 			name:    "no type",
 			query:   "wdqwq $aaas: wefweffe wef wef",
 			outType: '?',
-			wantErr: fmt.Errorf("parse error! no argument type right from wdqwq $aaas:"),
+			wantErr: fmt.Errorf("no argument type right from wdqwq $aaas:"),
 		},
 		{
 			name:    "int instead of type",
 			query:   "wdqwq $aaas:23 wefweffe wef wef",
 			outType: '?',
-			wantErr: fmt.Errorf("parse error! no argument type right from wdqwq $aaas:"),
+			wantErr: fmt.Errorf("no argument type right from wdqwq $aaas:"),
 		},
 
 		{
@@ -101,13 +101,13 @@ func Test_findArgs(t *testing.T) {
 			name:    "negative. two arguments with same name and different type",
 			query:   "select id:int from messages where from=$userId:int or to=$userId:string",
 			outType: '$',
-			wantErr: fmt.Errorf("parse error! argument with name userId have different types! int and string"),
+			wantErr: fmt.Errorf("argument with name userId have different types! int and string"),
 		},
 		{
 			name:    "negative. no params",
 			query:   "select * from messages where from=$userId:int or to=$userId:string",
 			outType: '$',
-			wantErr: fmt.Errorf("parse error! use should use proper columnName:type pair for column! only alpha numerics are allowed! near: select * "),
+			wantErr: fmt.Errorf("use should use proper columnName:type pair for column! only alpha numerics are allowed! near: select * "),
 		},
 		{
 			name:         "pasitive. with param",
@@ -186,14 +186,38 @@ func Test_findArgs(t *testing.T) {
 			},
 		},
 		{
-			name:             "negative. checking returning arguments in delete with supportReturning disabled",
+			name:             "bad sql behavior. checking returning arguments in delete with supportReturning disabled",
 			query:            "delete from messages returning id:int, name:string",
 			outType:          '$',
 			supportReturning: false,
 			wantArgs:         []*parsedArg{},
 			wantOutQuery:     "delete from messages returning id:int, name:string",
+			wantParams:       []*parsedArg{},
+		},
 
-			wantParams: []*parsedArg{},
+		{
+			name:             "negative. $after$",
+			query:            "delete from messages where $name:string$aaam:ewew",
+			outType:          '$',
+			supportReturning: false,
+			wantErr:          fmt.Errorf("syntax error near: delete from messages where $name:string$"),
+		},
+
+		{
+			name:             "negative. error in argument type with package",
+			query:            "delete from messages where $name:sql.",
+			outType:          '$',
+			supportReturning: false,
+			wantErr:          fmt.Errorf("not finished type near delete from messages where $name:sql."),
+		},
+		{
+			name:             "positive. argument type with package",
+			query:            "delete from messages where $name:sql.NullString",
+			outType:          '$',
+			supportReturning: false,
+			wantArgs:         []*parsedArg{&parsedArg{ArgName: "name", ArgType: "sql.NullString"}},
+			wantOutQuery:     "delete from messages where $1",
+			wantParams:       []*parsedArg{},
 		},
 
 		// TODO: Add test cases.
