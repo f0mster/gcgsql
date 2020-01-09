@@ -6,6 +6,27 @@ import (
 	"testing"
 )
 
+func Test_funcMap(t *testing.T) {
+	data := funcMap["Escape"].(func(s string) string)(`"khk\" h"`)
+	assert.Equal(t, "\\\"khk\\\\\\\"\\\" h\\\"", data, "escape not working")
+	data = funcMap["PrintCallParams"].(func(params []*parsedArg, prefix string, firstComma bool) string)(
+		[]*parsedArg{}, "DHDH", true)
+	assert.Equal(t, "", data, "PrintCallParams not work correctly on empty data")
+	data = funcMap["PrintCallParams"].(func(params []*parsedArg, prefix string, firstComma bool) string)(
+		[]*parsedArg{
+			&parsedArg{ArgName: "test"},
+			&parsedArg{ArgName: "test2"},
+		}, "DHDH", false)
+	assert.Equal(t, "DHDHtest, DHDHtest2", data, "PrintCallParams not work correctly on empty data")
+	data = funcMap["PrintCallParams"].(func(params []*parsedArg, prefix string, firstComma bool) string)(
+		[]*parsedArg{
+			&parsedArg{ArgName: "test"},
+			&parsedArg{ArgName: "test2"},
+		}, "DHDH", true)
+	assert.Equal(t, ", DHDHtest, DHDHtest2", data, "PrintCallParams not work correctly on empty data")
+
+}
+
 func Test_findArgs(t *testing.T) {
 	type args struct {
 	}

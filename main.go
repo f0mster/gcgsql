@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"gopkg.in/yaml.v2"
 	"io/ioutil"
-	"log"
 	"os"
 	"regexp"
 	"strconv"
@@ -34,7 +33,9 @@ var pkg = flag.String("package", "", "output package name")
 var isAlphaNumericName = regexp.MustCompile("^['`\"]?[_a-zA-Z][_a-zA-Z0-9]*['`\"]?$")
 
 var funcMap = template.FuncMap{
-	"Escape": func(s string) string { return strings.ReplaceAll(strings.ReplaceAll(s, `\`, `\\"`), `"`, `\"`) },
+	"Escape": func(s string) string {
+		return strings.ReplaceAll(strings.ReplaceAll(s, `\`, `\\"`), `"`, `\"`)
+	},
 	"PrintCallParams": func(params []*parsedArg, prefix string, firstComma bool) string {
 		out := ""
 		for i := range params {
@@ -48,11 +49,24 @@ var funcMap = template.FuncMap{
 		return out
 	},
 }
+var arguments = map[string]*data{}
+var tmpl = templatesMysql
+var argRune = '?'
+var supportReturning = false
+var queries = map[string]string{}
+var haveErrors = false
+var required = map[string]*string{"dbtype": dbType, "yaml": yamlPath, "output": outputFileName, "package": pkg}
+
+func dieOnError(err error) {
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+}
 
 func main() {
+
 	flag.Parse()
-	required := map[string]*string{"dbtype": dbType, "yaml": yamlPath, "output": outputFileName, "package": pkg}
-	haveErrors := false
 	for i := range required {
 		if *required[i] == "" {
 			fmt.Println(i, "argument is empty but required")
@@ -62,64 +76,34 @@ func main() {
 	if haveErrors {
 		os.Exit(1)
 	}
-	var queries = map[string]string{}
-	if b, e := ioutil.ReadFile(*yamlPath); e != nil {
-		fmt.Println(e)
-		return
-	} else {
-		err := yaml.Unmarshal(b, &queries)
-		if err != nil {
-			fmt.Println("error", err)
-			return
-		}
-	}
-	var arguments = map[string]*data{}
-	tmpl := ""
-	var err error
+
+	b, e := ioutil.ReadFile(*yamlPath)
+	dieOnError(e)
+	dieOnError(yaml.Unmarshal(b, &queries))
+
 	switch *dbType {
 	case "mysql":
-		for i := range queries {
-			arguments[i], err = findArgs(queries[i], '?', false)
-			if err != nil {
-				fmt.Println(err)
-				os.Exit(1)
-			}
-		}
-		tmpl = templatesMysql
 	case "postgres":
-		fmt.Println("pg")
-		for i := range queries {
-			arguments[i], err = findArgs(queries[i], '$', true)
-			if err != nil {
-				fmt.Println(err)
-				os.Exit(1)
-			}
-		}
-
+		argRune = '$'
+		supportReturning = true
 		tmpl = templatesPostrgeSQL
 	default:
 		fmt.Println("unsupported db type")
 	}
+	for i := range queries {
+		arguments[i], e = findArgs(queries[i], argRune, supportReturning)
+		dieOnError(e)
+	}
 
-	t, err := template.New("").Funcs(funcMap).Parse(tmpl)
-	if err != nil {
-		log.Print(err)
-		return
-	}
-	f, err := os.Create(*outputFileName)
-	log.Println("create file: ")
-	if err != nil {
-		log.Println("create file: ", err)
-		return
-	}
-	err = t.Execute(f, struct {
+	t, e := template.New("").Funcs(funcMap).Parse(tmpl)
+	dieOnError(e)
+	f, e := os.Create(*outputFileName)
+	dieOnError(e)
+	e = t.Execute(f, struct {
 		Queries map[string]*data
 		Package string
 	}{Queries: arguments, Package: *pkg})
-	if err != nil {
-		log.Print("execute: ", err)
-		return
-	}
+	dieOnError(e)
 }
 
 type arg struct {
@@ -199,16 +183,31 @@ func findArgs(query string, outType rune, supportReturning bool) (res *data, err
 			returingStarted = true
 		}
 
-		if len(brackets) == 0 && (returingStarted || selectsParams) && (tok == ',' || last6tokens[0].lowerText == "from" || tok == scanner.EOF) {
+		if len(brackets) == 0 && (returingStarted || selectsParams) &&
+			(tok == ',' || last6tokens[0].lowerText == "from" || tok == scanner.EOF) {
 			if last6tokens[1].token == scanner.Ident && last6tokens[2].token == ':' &&
 				isAlphaNumericName.MatchString(last6tokens[3].lowerText) &&
 				last6tokens[1].startPos == last6tokens[2].endPos && last6tokens[2].startPos == last6tokens[3].endPos {
-				args = append(args, &arg{argName: last6tokens[3].text, argType: last6tokens[1].lowerText, posStart: last6tokens[3].startPos, posEnd: last6tokens[1].endPos, isParam: true})
+				args = append(args, &arg{
+					argName:  last6tokens[3].text,
+					argType:  last6tokens[1].lowerText,
+					posStart: last6tokens[3].startPos,
+					posEnd:   last6tokens[1].endPos,
+					isParam:  true,
+				})
 				i++
-			} else if last6tokens[1].token == scanner.Ident && last6tokens[2].token == '.' && last6tokens[3].token == scanner.Ident && last6tokens[4].token == ':' &&
+			} else if last6tokens[1].token == scanner.Ident && last6tokens[2].token == '.' &&
+				last6tokens[3].token == scanner.Ident && last6tokens[4].token == ':' &&
 				isAlphaNumericName.MatchString(last6tokens[5].lowerText) &&
-				last6tokens[1].startPos == last6tokens[2].endPos && last6tokens[2].startPos == last6tokens[3].endPos && last6tokens[3].startPos == last6tokens[4].endPos && last6tokens[4].startPos == last6tokens[5].endPos {
-				args = append(args, &arg{argName: last6tokens[5].text, argType: last6tokens[3].text + "." + last6tokens[1].text, posStart: last6tokens[5].startPos, posEnd: last6tokens[1].endPos, isParam: true})
+				last6tokens[1].startPos == last6tokens[2].endPos && last6tokens[2].startPos == last6tokens[3].endPos &&
+				last6tokens[3].startPos == last6tokens[4].endPos && last6tokens[4].startPos == last6tokens[5].endPos {
+				args = append(args, &arg{
+					argName:  last6tokens[5].text,
+					argType:  last6tokens[3].text + "." + last6tokens[1].text,
+					posStart: last6tokens[5].startPos,
+					posEnd:   last6tokens[1].endPos,
+					isParam:  true,
+				})
 				i++
 			} else {
 				return nil, fmt.Errorf("use should use proper columnName:type pair for column! only alpha numerics are allowed! near: %s", query[0:s.Offset])
@@ -311,7 +310,10 @@ func findArgs(query string, outType rune, supportReturning bool) (res *data, err
 		if args[i].isParam {
 			res.ReturnParams = append(res.ReturnParams, &parsedArg{ArgType: args[i].argType, ArgName: args[i].argName})
 		} else if outType == '?' || argTypeByName[args[i].argName].link == i {
-			res.Arguments = append(res.Arguments, &parsedArg{ArgType: argTypeByName[args[i].argName].argType, ArgName: args[i].argName})
+			res.Arguments = append(res.Arguments, &parsedArg{
+				ArgType: argTypeByName[args[i].argName].argType,
+				ArgName: args[i].argName,
+			})
 		}
 		offset = args[i].posEnd
 	}
