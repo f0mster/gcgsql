@@ -99,9 +99,9 @@ func Test_findArgs(t *testing.T) {
 
 		{
 			name:    "negative. two arguments with same name and different type",
-			query:   "select id:int from messages where from=$userId:int or to=$userId:string",
+			query:   "select id:int from messages where from=$userId:int or to=$userId:sql.NullString",
 			outType: '$',
-			wantErr: fmt.Errorf("argument with name userId have different types! int and string"),
+			wantErr: fmt.Errorf("argument with name userId have different types! int and sql.NullString"),
 		},
 		{
 			name:    "negative. no params",
@@ -210,6 +210,7 @@ func Test_findArgs(t *testing.T) {
 			supportReturning: false,
 			wantErr:          fmt.Errorf("not finished type near delete from messages where $name:sql."),
 		},
+
 		{
 			name:             "positive. argument type with package",
 			query:            "delete from messages where $name:sql.NullString",

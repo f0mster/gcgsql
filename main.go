@@ -223,6 +223,7 @@ func findArgs(query string, outType rune, supportReturning bool) (res *data, err
 		}
 		if tok == '$' {
 			state = 0
+			argTypeJustSet = false
 			args = append(args, &arg{posStart: s.Offset, posEnd: s.Offset + 1})
 			i++
 			continue
