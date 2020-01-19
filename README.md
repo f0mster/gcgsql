@@ -2,6 +2,16 @@
 
 Golang Code Generation from SQL
 
+# Table of Contents
+1. [How does it works](#how-does-it-works)
+2. [Yaml](#yaml)
+3. [Syntax](#syntax)  
+3.1. [Selecting data](#selecting-data)  
+3.2. [Arguments](#arguments)  
+3.3. [Bulks](#bulks)  
+4. [Installation](#installation)
+5. [Known Issues](#known-issues)
+
 ## How does it works
 
 Program reads yaml file with queries and generates functions with arguments that you need to pass to your query. 
@@ -47,7 +57,7 @@ Where:
 **withTransaction** - bool. should Transaction support be added to generated functions
 
 ## Syntax
-### Selecting data data from mysql
+### Selecting data
 
 if you want to get something from "select" query you should specify the type of this field.
 You can do it like this:
