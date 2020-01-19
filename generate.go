@@ -31,9 +31,6 @@ var funcMap = template.FuncMap{
 	"Escape": func(s string) string {
 		return strings.ReplaceAll(strings.ReplaceAll(s, `\`, `\\"`), `"`, `\"`)
 	},
-	"CountAgrsLen": func(ar *parsedArg) string {
-		return ""
-	},
 	"Title":   strings.Title,
 	"Replace": strings.Replace,
 	"MakeMapStringBool": func() map[string]bool {
