@@ -130,3 +130,12 @@ delete from users where $nameAndLastname:mytype#(name=$name and lastname=$lastna
 ```
 
 when you use your own structure - you must omit the type inside the repeatable part  
+
+## Installation
+
+go get -u github.com/f0mster/gcgsql/...  
+go install github.com/f0mster/gcgsql/...  
+
+## Known Issues
+
+1) Doesn't work with stored procedures in mysql
