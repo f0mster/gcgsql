@@ -6,11 +6,13 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+
+	"strconv"
 )
 
 func addUser(ctx context.Context, conn *sql.Tx, name string) (sql.Result, error) {
 
-	res, err := conn.ExecContext(ctx, "insert into users set name=?", name)
+	res, err := conn.ExecContext(ctx, "insert into users set name=$1", name)
 	if err != nil {
 		return nil, fmt.Errorf("error while executing function addUser %w", err)
 	}
@@ -30,16 +32,20 @@ func addbulkusers(ctx context.Context, conn *sql.Tx, userdata []userdataStruct) 
 	cnt := len(userdata) * 2
 	var args = make([]interface{}, cnt)
 	i := 0
+	subQuery := ""
 
 	first = true
 	subString.Reset()
 	for _, v := range userdata {
+		subQuery = "($0$, $1$)"
 
 		args[i] = v.id
 		i++
+		subQuery = strings.Replace(subQuery, "$0$", "$"+strconv.Itoa(i), -1)
 
 		args[i] = v.name
 		i++
+		subQuery = strings.Replace(subQuery, "$1$", "$"+strconv.Itoa(i), -1)
 
 		if first {
 			first = false
@@ -47,7 +53,7 @@ func addbulkusers(ctx context.Context, conn *sql.Tx, userdata []userdataStruct) 
 			subString.Write([]byte(","))
 		}
 
-		subString.Write([]byte("(?, ?)"))
+		subString.Write([]byte(subQuery))
 	}
 	query = strings.Replace(query, "$0$", subString.String(), -1)
 
@@ -66,16 +72,20 @@ func addbulkusers2(ctx context.Context, conn *sql.Tx, userdata []sometype) (sql.
 	cnt := len(userdata) * 2
 	var args = make([]interface{}, cnt)
 	i := 0
+	subQuery := ""
 
 	first = true
 	subString.Reset()
 	for _, v := range userdata {
+		subQuery = "($0$, $1$)"
 
 		args[i] = v.id
 		i++
+		subQuery = strings.Replace(subQuery, "$0$", "$"+strconv.Itoa(i), -1)
 
 		args[i] = v.name
 		i++
+		subQuery = strings.Replace(subQuery, "$1$", "$"+strconv.Itoa(i), -1)
 
 		if first {
 			first = false
@@ -83,7 +93,7 @@ func addbulkusers2(ctx context.Context, conn *sql.Tx, userdata []sometype) (sql.
 			subString.Write([]byte(","))
 		}
 
-		subString.Write([]byte("(?, ?)"))
+		subString.Write([]byte(subQuery))
 	}
 	query = strings.Replace(query, "$0$", subString.String(), -1)
 
@@ -109,10 +119,12 @@ func findUsersIdIn(ctx context.Context, conn *sql.Tx, userId []int) ([]*findUser
 	cnt := len(userId) * 1
 	var args = make([]interface{}, cnt)
 	i := 0
+	subQuery := ""
 
 	first = true
 	subString.Reset()
 	for _, v := range userId {
+		subQuery = ""
 
 		args[i] = v
 		i++
@@ -123,7 +135,7 @@ func findUsersIdIn(ctx context.Context, conn *sql.Tx, userId []int) ([]*findUser
 			subString.Write([]byte(","))
 		}
 
-		subString.Write([]byte("?"))
+		subString.Write([]byte("$" + strconv.Itoa(i) + subQuery))
 	}
 	query = strings.Replace(query, "$0$", subString.String(), -1)
 
@@ -160,14 +172,16 @@ func findUsersIdInOrByLoginAndName(ctx context.Context, conn *sql.Tx, userId []i
 
 	var subString strings.Builder
 	var first = true
-	query := "select id, name, info, login from users where id in ($0$) $1$  or admin=1"
+	query := "select id, name, info, login from test.users where id in ($0$) $1$  or admin=1"
 	cnt := len(userId)*1 + len(ln)*2
 	var args = make([]interface{}, cnt)
 	i := 0
+	subQuery := ""
 
 	first = true
 	subString.Reset()
 	for _, v := range userId {
+		subQuery = ""
 
 		args[i] = v
 		i++
@@ -178,21 +192,24 @@ func findUsersIdInOrByLoginAndName(ctx context.Context, conn *sql.Tx, userId []i
 			subString.Write([]byte(","))
 		}
 
-		subString.Write([]byte("?"))
+		subString.Write([]byte("$" + strconv.Itoa(i) + subQuery))
 	}
 	query = strings.Replace(query, "$0$", subString.String(), -1)
 
 	first = true
 	subString.Reset()
 	for _, v := range ln {
+		subQuery = " or (login=$0$ and name=$1$)"
 
 		args[i] = v.login
 		i++
+		subQuery = strings.Replace(subQuery, "$0$", "$"+strconv.Itoa(i), -1)
 
 		args[i] = v.name
 		i++
+		subQuery = strings.Replace(subQuery, "$1$", "$"+strconv.Itoa(i), -1)
 
-		subString.Write([]byte(" or (login=? and name=?)"))
+		subString.Write([]byte(subQuery))
 	}
 	query = strings.Replace(query, "$1$", subString.String(), -1)
 
@@ -222,7 +239,7 @@ type findUsersWithStruct struct {
 
 func findUsersWith(ctx context.Context, conn *sql.Tx, userId int) ([]*findUsersWithStruct, error) {
 
-	res, err := conn.QueryContext(ctx, "select id, name, info, login from users where id=?", userId)
+	res, err := conn.QueryContext(ctx, "select id, name, info, login from users where id=$1", userId)
 	if err != nil {
 		return nil, fmt.Errorf("error while executing function findUsersWith %w", err)
 	}
@@ -241,12 +258,12 @@ func findUsersWith(ctx context.Context, conn *sql.Tx, userId int) ([]*findUsersW
 
 type getAllUsersStruct struct {
 	id   int
-	name string
+	name sql.NullString
 }
 
 func getAllUsers(ctx context.Context, conn *sql.Tx) ([]*getAllUsersStruct, error) {
 
-	res, err := conn.QueryContext(ctx, "select id, name from users")
+	res, err := conn.QueryContext(ctx, "select id, name from \"test\".\"users\"")
 	if err != nil {
 		return nil, fmt.Errorf("error while executing function getAllUsers %w", err)
 	}
@@ -270,7 +287,7 @@ type getUserByNameStruct struct {
 
 func getUserByName(ctx context.Context, conn *sql.Tx, name string, altername string) ([]*getUserByNameStruct, error) {
 
-	res, err := conn.QueryContext(ctx, "select name, id from users where name like ? or name like ?", name, altername)
+	res, err := conn.QueryContext(ctx, "select name, id from users where name like $1 or name like $2", name, altername)
 	if err != nil {
 		return nil, fmt.Errorf("error while executing function getUserByName %w", err)
 	}
@@ -289,7 +306,7 @@ func getUserByName(ctx context.Context, conn *sql.Tx, name string, altername str
 
 func updateUserName(ctx context.Context, conn *sql.Tx, name string, userId int) (sql.Result, error) {
 
-	res, err := conn.ExecContext(ctx, "update users set name=? where id=?", name, userId)
+	res, err := conn.ExecContext(ctx, "update users set name=$1 where id=$2", name, userId)
 	if err != nil {
 		return nil, fmt.Errorf("error while executing function updateUserName %w", err)
 	}

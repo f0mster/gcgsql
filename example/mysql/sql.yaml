@@ -1,5 +1,16 @@
-getAllUsers: "select id:int, name:string from users"
-findUsersWith: "select id:int, name:string from users where id=$userId:int"
-getUserByName: "select name:string, id:int from users where name like $name:string or name like $altername:string"
-updateUserName: "update users set name=?string:name where id=$userId:int"
-addUser: "insert into users set name=?string:name"
+package: "main"
+sqlDriver: "github.com/go-sql-driver/mysql"
+outFilePath: "out.go"
+withContext: true
+withTransaction: true
+imports:
+queries:
+  getAllUsers: "select id:int, name:string from users"
+  findUsersWith: "select id:int, name:string, info:string, login:string from users where id=$userId:int"
+  getUserByName: "select name:string, id:int from users where name like $name:string or name like $altername:string"
+  updateUserName: "update users set name=$name:string where id=$userId:int"
+  addUser: "insert into users set name=$name:string"
+  findUsersIdIn: "select id:int, name:string, info:string, login:string from users where id in ($userId:[]int)"
+  addbulkusers: "insert into users (id, name) values $userdata#($id:int, $name:string)|,#"
+  addbulkusers2: "insert into users (id, name) values $userdata:sometype#($id, $name)|,#"
+  findUsersIdInOrByLoginAndName: "select id:int, name:string, info:sql.NullString, login:sql.NullString from users where id in ($userId:[]int) $ln# or (login=$login:string and name=$name:string)|#  or admin=1"

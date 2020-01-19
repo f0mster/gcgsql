@@ -4,12 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	_ "github.com/go-sql-driver/mysql"
+	_ "github.com/lib/pq"
 	"os"
 )
 
 func main() {
-	conn, err := sql.Open("mysql", "root:@tcp(localhost:3306)/consys2")
+	connstr := fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=disable", "postgres", "", "localhost", 5432, "test")
+	conn, err := sql.Open("postgres", connstr)
 	if err != nil {
 		fmt.Println(conn)
 		os.Exit(1)
@@ -19,7 +20,8 @@ func main() {
 		fmt.Println(err)
 		os.Exit(1)
 	}
-	res, err := findUsersIdInOrByLoginAndName(context.Background(), tx, []int{1, 2, 3, 4, 6}, []lnStruct{{name: "1233", login: "qdqwqwd"}})
+	//res, err := getAllUsers(context.Background(), tx)
+	res, err := findUsersIdInOrByLoginAndName(context.Background(), tx, []int{1, 2, 3, 4, 6}, []lnStruct{{name: "1", login: "1"}, {login: "2", name: "2"}})
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
