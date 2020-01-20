@@ -127,6 +127,22 @@ func findArgs(query string, supportReturning bool, typeRequired bool) (res *data
 					isParam:  true,
 				})
 				i++
+			} else if last6tokens[1].token == scanner.Ident && last6tokens[1].text == "byte" &&
+				last6tokens[2].token == ']' &&
+				last6tokens[3].token == '[' &&
+				last6tokens[4].token == ':' &&
+				isAlphaNumericName.MatchString(last6tokens[5].lowerText) &&
+				last6tokens[1].startPos == last6tokens[2].endPos && last6tokens[2].startPos == last6tokens[3].endPos &&
+				last6tokens[3].startPos == last6tokens[4].endPos && last6tokens[4].startPos == last6tokens[5].endPos {
+				args = append(args, &arg{
+					argName:  last6tokens[5].text,
+					argType:  "[]byte",
+					posStart: last6tokens[5].startPos,
+					posEnd:   last6tokens[1].endPos,
+					isParam:  true,
+				})
+				i++
+
 			} else {
 				return nil, fmt.Errorf("use should use proper columnName:type pair for column! only alpha numerics are allowed! near: %s", query[0:s.Offset])
 			}

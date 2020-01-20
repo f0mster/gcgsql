@@ -318,6 +318,19 @@ func Test_findArgs(t *testing.T) {
 		},
 
 		{
+			name:             "positive. select with []byte",
+			query:            "select id:int, info:[]byte from users",
+			wantOutQuery:     "select id, info from users",
+			wantArgs:         slicePA{},
+			supportReturning: true,
+			wantParams: slicePP{
+				{ParamName: "id", ParamType: "int"},
+				{ParamName: "info", ParamType: "[]byte"},
+			},
+			wantHaveRepeatableParts: false,
+		},
+
+		{
 			name:         "positive. repeatable args with type, no separator",
 			query:        "delete from messages where $args:myType#(`from`=$from and to=$to)#",
 			wantOutQuery: "delete from messages where $0$",
