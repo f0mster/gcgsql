@@ -15,6 +15,7 @@ func Test_findArgs(t *testing.T) {
 		wantOutQuery            string
 		wantArgs                slicePA
 		wantParams              slicePP
+		wantParamsType          string
 		wantErr                 error
 		wantHaveRepeatableParts bool
 	}{
@@ -40,6 +41,13 @@ func Test_findArgs(t *testing.T) {
 			query:   "select if(a>b, a, a:b) a from users",
 			wantErr: fmt.Errorf("use should use proper columnName:type pair for column! only alpha numerics are allowed! near: select if(a>b, a, a:b) a "),
 		},
+
+		{
+			name:    "negative. senseless query inside brackets. space inside name",
+			query:   "select if(a>b, a, a:b) a :int from users",
+			wantErr: fmt.Errorf("use should use proper columnName:type pair for column! only alpha numerics are allowed! near: select if(a>b, a, a:b) a :int "),
+		},
+
 
 		{
 			name:         "positive. senseless query inside brackets",
@@ -112,7 +120,7 @@ func Test_findArgs(t *testing.T) {
 				{ArgType: "int", ArgName: "userId", PlaceHolder: "$1$"},
 			},
 			wantParams: slicePP{
-				&parsedParam{ParamName: "`from`", ParamType: "int"},
+				&parsedParam{ParamName: "from", ParamType: "int"},
 				&parsedParam{ParamName: "to", ParamType: "int"},
 			},
 		},
@@ -331,6 +339,84 @@ func Test_findArgs(t *testing.T) {
 		},
 
 		{
+			name:             "positive. returning with []byte",
+			query:            "delete from users returning id:int, info:[]byte",
+			wantOutQuery:     "delete from users returning id, info",
+			wantArgs:         slicePA{},
+			supportReturning: true,
+			wantParams: slicePP{
+				{ParamName: "id", ParamType: "int"},
+				{ParamName: "info", ParamType: "[]byte"},
+			},
+			wantHaveRepeatableParts: false,
+		},
+
+		{
+			name:             "positive. select to existing structure",
+			query:            "select:myStruct id `Id`, info from users where id=$UserId:int",
+			wantOutQuery:     "select id `Id`, info from users where id=$0$",
+			wantArgs:         slicePA{
+				{ArgType: "int", ArgName: "UserId", PlaceHolder: "$0$"},
+			},
+			supportReturning: true,
+			wantParams: slicePP{
+				{ParamName: "Id"},
+				{ParamName: "info"},
+			},
+			wantHaveRepeatableParts: false,
+			wantParamsType:          "myStruct",
+		},
+
+		{
+			name:             "negative. select to existing structure with defining field type",
+			query:            "select:myStruct id:int, info:string from users",
+			wantErr: fmt.Errorf("use should use columnName without type when using becouse you specified structure 'myStruct'!  near: select:myStruct id:int"),
+		},
+
+		{
+			name:             "positive. select to existing structure with pkg",
+			query:            "select:pkg.myStruct id, info from users",
+			wantOutQuery:     "select id, info from users",
+			wantArgs:         slicePA{},
+			supportReturning: true,
+			wantParams: slicePP{
+				{ParamName: "id"},
+				{ParamName: "info"},
+			},
+			wantHaveRepeatableParts: false,
+			wantParamsType:          "pkg.myStruct",
+		},
+
+		{
+			name:             "negative. select to existing structure with pkg with defining field type",
+			query:            "select:pkg.myStruct id:int, info:string from users",
+			wantErr: fmt.Errorf("use should use columnName without type when using becouse you specified structure 'pkg.myStruct'!  near: select:pkg.myStruct id:int"),
+		},
+
+
+
+		{
+			name:             "positive. returning to existing structure",
+			query:            "delete from users returning:myStruct id, info",
+			wantOutQuery:     "delete from users returning id, info",
+			wantArgs:         slicePA{},
+			supportReturning: true,
+			wantParams: slicePP{
+				{ParamName: "id"},
+				{ParamName: "info"},
+			},
+			wantHaveRepeatableParts: false,
+			wantParamsType:          "myStruct",
+		},
+
+		{
+			name:             "negative. returning to existing structure with defining field type",
+			query:            "delete from users returning:myStruct id:int, info:string",
+			wantErr: fmt.Errorf("use should use columnName without type when using becouse you specified structure 'myStruct'!  near: select:myStruct id:int"),
+		},
+
+
+		{
 			name:         "positive. repeatable args with type, no separator",
 			query:        "delete from messages where $args:myType#(`from`=$from and to=$to)#",
 			wantOutQuery: "delete from messages where $0$",
@@ -351,6 +437,18 @@ func Test_findArgs(t *testing.T) {
 			wantParams:              slicePP{},
 			wantHaveRepeatableParts: true,
 		},
+		{
+			name:         "positive. params withot space between",
+			query:        "select id:int,name:string from users",
+			wantErr:      nil,
+			wantOutQuery: "select id,name from users",
+			wantParams: slicePP{
+				{ParamName: "id", ParamType: "int"},
+				{ParamName: "name", ParamType: "string"},
+			},
+			wantArgs: slicePA{},
+		},
+
 		{
 			name:    "negative. repeatable args with type, no separator",
 			query:   "delete from messages where $args:[]myType#(`from`=$from:int and to=$to:int)#",
@@ -437,6 +535,7 @@ func Test_findArgs(t *testing.T) {
 				assert.Equal(t, tt.wantOutQuery, res.Query, "wrong out query")
 				assert.Equal(t, tt.wantHaveRepeatableParts, res.HaveRepeatableParts, "wrong HaveRepeatableParts")
 				assert.Equal(t, tt.wantParams, res.ReturnParams, "wrong out params")
+				assert.Equal(t, tt.wantParamsType, res.ReturnParamsType, "wrong out params")
 			}
 		})
 	}

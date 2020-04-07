@@ -20,6 +20,7 @@ type arg struct {
 	posStart    int
 	posEnd      int
 	isParam     bool
+	isSystem    bool
 	notFinished bool
 }
 
@@ -47,6 +48,17 @@ var scannerError = func(*scanner.Scanner, string) {}
 
 // typeRequired if have repeatable part with type -> we must omit type check inside
 // repeatable part and return error if type found.
+func nWithoutSpace(tokens []token) (n int) {
+	n = 1
+	for i := 1; i < len(tokens); i++ {
+		if tokens[i].endPos == 0 || tokens[i].endPos != tokens[i-1].startPos {
+			break
+		}
+		n++
+	}
+	return
+}
+
 func findArgs(query string, supportReturning bool, typeRequired bool) (res *data, err error) {
 	var isAlphaNumericName = regexp.MustCompile("^['`\"]?[_a-zA-Z][_a-zA-Z0-9]*['`\"]?$")
 	var s scanner.Scanner
@@ -66,8 +78,11 @@ func findArgs(query string, supportReturning bool, typeRequired bool) (res *data
 	argTypeJustSet := false
 	RepeatedPlaceHolder := int64(0)
 	reperableStartPos := 0
+	//tmpArg := arg{}
 	res = &data{Arguments: make([]*parsedArg, 0), ReturnParams: make([]*parsedParam, 0)}
+	cnt := -1
 	for tok := s.Scan(); last6tokens[0].token != scanner.EOF; tok = s.Scan() {
+		cnt++
 		if s.Offset == 0 {
 			queryType = strings.ToLower(s.TokenText())
 			if queryType == "select" {
@@ -95,61 +110,136 @@ func findArgs(query string, supportReturning bool, typeRequired bool) (res *data
 				return nil, fmt.Errorf("wrong bracket! excpected %c but found %c at right of %s", bracketPairs[tok], pair, query[0:s.Offset])
 			}
 		}
-		if len(brackets) == 0 && supportReturning &&
-			(queryType == "insert" || queryType == "delete" || queryType == "update") &&
-			last6tokens[0].lowerText == "returning" {
-			returningStarted = true
-		}
+		if len(brackets) == 0 {
+			if supportReturning && (queryType == "insert" || queryType == "delete" || queryType == "update") &&
+				last6tokens[0].lowerText == "returning" {
+				returningStarted = true
+			}
 
-		if len(brackets) == 0 && (returningStarted || selectsParams) &&
-			(tok == ',' || last6tokens[0].lowerText == "from" || tok == scanner.EOF) {
-			if last6tokens[1].token == scanner.Ident && last6tokens[2].token == ':' &&
-				isAlphaNumericName.MatchString(last6tokens[3].lowerText) &&
-				last6tokens[1].startPos == last6tokens[2].endPos && last6tokens[2].startPos == last6tokens[3].endPos {
-				args = append(args, &arg{
-					argName:  last6tokens[3].text,
-					argType:  last6tokens[1].lowerText,
-					posStart: last6tokens[3].startPos,
-					posEnd:   last6tokens[1].endPos,
-					isParam:  true,
-				})
-				i++
-			} else if last6tokens[1].token == scanner.Ident && last6tokens[2].token == '.' &&
-				last6tokens[3].token == scanner.Ident && last6tokens[4].token == ':' &&
-				isAlphaNumericName.MatchString(last6tokens[5].lowerText) &&
-				last6tokens[1].startPos == last6tokens[2].endPos && last6tokens[2].startPos == last6tokens[3].endPos &&
-				last6tokens[3].startPos == last6tokens[4].endPos && last6tokens[4].startPos == last6tokens[5].endPos {
-				args = append(args, &arg{
-					argName:  last6tokens[5].text,
-					argType:  last6tokens[3].text + "." + last6tokens[1].text,
-					posStart: last6tokens[5].startPos,
-					posEnd:   last6tokens[1].endPos,
-					isParam:  true,
-				})
-				i++
-			} else if last6tokens[1].token == scanner.Ident && last6tokens[1].text == "byte" &&
-				last6tokens[2].token == ']' &&
-				last6tokens[3].token == '[' &&
-				last6tokens[4].token == ':' &&
-				isAlphaNumericName.MatchString(last6tokens[5].lowerText) &&
-				last6tokens[1].startPos == last6tokens[2].endPos && last6tokens[2].startPos == last6tokens[3].endPos &&
-				last6tokens[3].startPos == last6tokens[4].endPos && last6tokens[4].startPos == last6tokens[5].endPos {
-				args = append(args, &arg{
-					argName:  last6tokens[5].text,
-					argType:  "[]byte",
-					posStart: last6tokens[5].startPos,
-					posEnd:   last6tokens[1].endPos,
-					isParam:  true,
-				})
-				i++
+			if selectsParams && last6tokens[1].lowerText == "from" && last6tokens[1].token == scanner.Ident {
+				selectsParams = false
+			}
+			if returningStarted || selectsParams {
+				cntWithoutSpace := nWithoutSpace(last6tokens[1:])
 
-			} else {
-				return nil, fmt.Errorf("use should use proper columnName:type pair for column! only alpha numerics are allowed! near: %s", query[0:s.Offset])
+				// parsing "select:myType"
+				var scanType bool
+				if cntWithoutSpace == 3 && selectsParams && cnt == 3 &&
+					last6tokens[3].token == scanner.Ident &&
+					last6tokens[3].lowerText == "select" {
+					scanType = true
+				}
+
+				if scanType &&
+					last6tokens[2].token == ':' &&
+					last6tokens[1].token == scanner.Ident &&
+					last6tokens[0].token != '.' {
+					res.ReturnParamsType = last6tokens[1].text
+					args = append(args, &arg{
+						argName:  last6tokens[3].text,
+						argType: last6tokens[1].text,
+						isSystem: true,
+						isParam:  true,
+						posStart: last6tokens[3].startPos,
+						posEnd:   last6tokens[1].endPos,
+					})
+					i++
+					last6tokens[1].startPos = 0
+					last6tokens[1].endPos = 0
+				} else
+				// parsing "select:myPkg.MyType"
+				if cntWithoutSpace == 5 && selectsParams && cnt == 5 &&
+					last6tokens[5].token == scanner.Ident &&
+					last6tokens[5].lowerText == "select" &&
+					last6tokens[4].token == ':' &&
+					last6tokens[3].token == scanner.Ident &&
+					last6tokens[2].token == '.' &&
+					last6tokens[1].token == scanner.Ident {
+					res.ReturnParamsType = last6tokens[3].text + "." + last6tokens[1].text
+					args = append(args, &arg{
+						argName:  last6tokens[5].text,
+						argType: last6tokens[3].text + "." + last6tokens[1].text,
+						isSystem: true,
+						isParam:  true,
+						posStart: last6tokens[5].startPos,
+						posEnd:   last6tokens[1].endPos,
+					})
+					i++
+					last6tokens[1].startPos = 0
+					last6tokens[1].endPos = 0
+				} else
+
+				if tok == ',' || last6tokens[0].lowerText == "from" || tok == scanner.EOF {
+					last6tokens[0].startPos = 0
+					last6tokens[0].endPos = 0
+					if res.ReturnParamsType != "" {
+						if cntWithoutSpace != 1 {
+							return nil, fmt.Errorf("use should use columnName without type when using becouse you specified structure '%s'!  near: %s", res.ReturnParamsType, query[0:s.Offset])
+						}
+						args = append(args, &arg{
+							argName:  last6tokens[1].text,
+							isParam:  true,
+							posStart: last6tokens[1].startPos,
+							posEnd:   last6tokens[1].endPos,
+						})
+						i++
+					} else
+					// parsing "select:pkg.myType" or "returning:pkg.myType"
+					if last6tokens[3].token == scanner.Ident &&
+						(last6tokens[3].lowerText == "select" || last6tokens[3].lowerText == "returning") &&
+						last6tokens[2].token == ':' && last6tokens[1].token == scanner.Ident &&
+						cntWithoutSpace == 3 {
+						res.ReturnParamsType = last6tokens[1].text
+					} else
+					// parsing "... fieldName:type ..."
+					if last6tokens[1].token == scanner.Ident && last6tokens[2].token == ':' &&
+						isAlphaNumericName.MatchString(last6tokens[3].lowerText) &&
+						cntWithoutSpace == 3 {
+						args = append(args, &arg{
+							argName:  last6tokens[3].text,
+							argType:  last6tokens[1].lowerText,
+							posStart: last6tokens[3].startPos,
+							posEnd:   last6tokens[1].endPos,
+							isParam:  true,
+						})
+						i++
+					} else
+					// parsing "... fieldName:pkg.type ..."
+					if last6tokens[1].token == scanner.Ident && last6tokens[2].token == '.' &&
+						last6tokens[3].token == scanner.Ident && last6tokens[4].token == ':' &&
+						isAlphaNumericName.MatchString(last6tokens[5].lowerText) &&
+						cntWithoutSpace == 5 {
+						args = append(args, &arg{
+							argName:  last6tokens[5].text,
+							argType:  last6tokens[3].text + "." + last6tokens[1].text,
+							posStart: last6tokens[5].startPos,
+							posEnd:   last6tokens[1].endPos,
+							isParam:  true,
+						})
+						i++
+					} else
+					// parsing "... fieldName:[]byte ..."
+					if last6tokens[1].token == scanner.Ident && last6tokens[1].text == "byte" &&
+						last6tokens[2].token == ']' &&
+						last6tokens[3].token == '[' &&
+						last6tokens[4].token == ':' &&
+						isAlphaNumericName.MatchString(last6tokens[5].lowerText) &&
+						cntWithoutSpace == 5 {
+						args = append(args, &arg{
+							argName:  last6tokens[5].text,
+							argType:  "[]byte",
+							posStart: last6tokens[5].startPos,
+							posEnd:   last6tokens[1].endPos,
+							isParam:  true,
+						})
+						i++
+					} else {
+						return nil, fmt.Errorf("use should use proper columnName:type pair for column! only alpha numerics are allowed! near: %s", query[0:s.Offset])
+					}
+				}
 			}
 		}
-		if selectsParams && len(brackets) == 0 && last6tokens[0].lowerText == "from" {
-			selectsParams = false
-		}
+
 		// parse arguments
 		if state >= 0 && state < 20 && last6tokens[0].startPos == last6tokens[1].endPos && tok == '$' {
 			return nil, fmt.Errorf("syntax error near: %s", query[0:last6tokens[0].endPos])
@@ -181,7 +271,7 @@ func findArgs(query string, supportReturning bool, typeRequired bool) (res *data
 			if _, ok := argTypeByName[args[i].argName]; !ok {
 				argTypeByName[args[i].argName] = &nameAndNumber{argType: "", link: i}
 			}
-		} else if (state == 1 || state == 5 || state == 7) && tok == '#' {
+		} else if (state == 1 || state == 5 || state == 7) && tok == '#' { // found #
 			reperableStartPos = last6tokens[0].endPos
 			res.HaveRepeatableParts = true
 			if args[i].repeatable {
@@ -190,7 +280,7 @@ func findArgs(query string, supportReturning bool, typeRequired bool) (res *data
 			state = 20
 			args[i].notFinished = true
 			args[i].repeatable = true
-		} else if state == 20 {
+		} else if state == 20 { // inside #
 			if tok == '#' {
 				//args[i].repeatedQuery
 				args[i].notFinished = false
@@ -302,7 +392,12 @@ func findArgs(query string, supportReturning bool, typeRequired bool) (res *data
 				}
 			}
 		}
-		if args[i].isParam {
+		if args[i].isSystem {
+
+		} else if args[i].isParam {
+			if args[i].argName[0] == '`' || args[i].argName[0] == '\'' || args[i].argName[0] == '"'{
+				args[i].argName = args[i].argName[1:len(args[i].argName)-1]
+			}
 			res.ReturnParams = append(res.ReturnParams, &parsedParam{
 				ParamType: args[i].argType,
 				ParamName: args[i].argName,

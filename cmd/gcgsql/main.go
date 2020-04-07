@@ -22,12 +22,14 @@ type yamlFile struct {
 	QueriesSlice    map[string]string `yaml:"queries"`
 	QueriesData     map[string]*data
 	WithContext     bool `yaml:"withContext"`
-	WithTransaction bool `yaml:"withTransaction"`
+	ConnectorName	string
 }
 
 type data struct {
+	ConnectorName	string
 	Arguments           slicePA
 	ReturnParams        slicePP
+	ReturnParamsType    string
 	Query               string
 	QueryType           string
 	HaveRepeatableParts bool
@@ -84,10 +86,17 @@ func main() {
 		}
 	}
 
+	_, file := filepath.Split(yamlData.OutputFileName)
+	n := strings.LastIndexByte(file, '.')
+	if n > 0 {
+		file =  file[:n]
+	}
+	yamlData.ConnectorName = yamlData.Pkg + file
 	for i := range yamlData.QueriesSlice {
 		arguments[i], e = findArgs(yamlData.QueriesSlice[i], supportReturning, true)
 		dieOnError(e)
 		arguments[i].Name = i
+		arguments[i].ConnectorName = yamlData.ConnectorName
 	}
 	if yamlData.OutputFileName != "/" {
 		yamlData.OutputFileName = path.Join(filepath.Dir(*yamlPath), yamlData.OutputFileName)
@@ -107,6 +116,8 @@ func main() {
 		}
 	}
 }
+
+
 
 type parsedArg struct {
 	ArgName string

@@ -79,6 +79,15 @@ You must always use alias if your field name is not alphanumeric
 
 Same goes for "returning" in db like postgres
 
+If you already have a structure and you don't need new one you should use this syntax:
+
+```
+select:pkg.struck id, name, md5(login) as md5login from users
+```
+
+Names will be taken from column name. So use alias in sql to match structure field.
+
+
 ### Arguments
 To use arguments in sql you should use syntax of arguments:
 ```
